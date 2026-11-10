@@ -18,6 +18,14 @@ SUPPORTED_FILTER_OPERATORS = {
     "in", "not_in", "contains", "is_null", "not_null",
 }
 
+SUPPORTED_DATE_GRANULARITIES = {
+    "day": "D",
+    "week": "W-SUN",
+    "month": "M",
+    "quarter": "Q",
+    "year": "Y",
+}
+
 
 def _casefold_value(value):
     """Normalize strings for matching without changing source data."""
@@ -320,7 +328,6 @@ def get_value_distribution(
             "string or Boolean column."
         )
 
-    # Reuse the existing filtering and grouping engine.
     grouped_result = group_and_aggregate(
         df=df,
         group_by=column,
@@ -429,13 +436,23 @@ def get_dataset_overview(
         if column not in excluded_columns
     ]
 
+    # Calculate duplicates using only columns available to the agent.
+    # Excluded columns must not influence the duplicate-row count.
+    visible_df = df[visible_columns]
+
+    duplicate_rows = (
+        int(visible_df.duplicated().sum())
+        if visible_columns
+        else 0
+    )
+
     return {
         "row_count": len(df),
         "column_count": len(df.columns),
         "context_column_count": len(visible_columns),
         "columns": visible_columns,
         "excluded_columns": list(excluded_columns),
-        "duplicate_rows": int(df.duplicated().sum()),
+        "duplicate_rows": duplicate_rows,
     }
 
 
@@ -575,12 +592,16 @@ def group_and_aggregate(
     limit: int = None,
     dataset_config: dict = None,
     validate_filter_values: bool = True,
+    date_granularity: str = None,
 ) -> dict:
     """
     Filter, group and aggregate dataset records.
 
     String equality and membership filters are case-insensitive.
     Unknown string categories are rejected by default with suggestions.
+
+    Optional date_granularity groups a parsed datetime column by:
+    day, week, month, quarter or year.
     """
 
     if not isinstance(df, pd.DataFrame):
@@ -599,6 +620,31 @@ def group_and_aggregate(
         raise ValueError(
             f"Grouping column '{group_by}' does not exist."
         )
+
+    if date_granularity is not None:
+
+        if not isinstance(date_granularity, str):
+            raise TypeError("date_granularity must be a string or None.")
+
+        date_granularity = date_granularity.lower()
+
+        if date_granularity not in SUPPORTED_DATE_GRANULARITIES:
+            raise ValueError(
+                "date_granularity must be one of: "
+                f"{sorted(SUPPORTED_DATE_GRANULARITIES)}."
+            )
+
+        if group_by is None:
+            raise ValueError(
+                "A grouping column is required when "
+                "date_granularity is specified."
+            )
+
+        if not pd.api.types.is_datetime64_any_dtype(df[group_by]):
+            raise ValueError(
+                f"Column '{group_by}' must be a parsed datetime "
+                "column to use date_granularity."
+            )
 
     if aggregation != "count" and metric is None:
         raise ValueError(
@@ -838,6 +884,26 @@ def group_and_aggregate(
 
         currency_values = currencies.tolist()
 
+    # Prepare grouping data.
+    aggregation_df = filtered_df.copy()
+    grouping_column = group_by
+
+    if date_granularity is not None:
+
+        frequency = SUPPORTED_DATE_GRANULARITIES[date_granularity]
+
+        period_values = (
+            filtered_df[group_by]
+            .dt.to_period(frequency)
+        )
+
+        grouping_column = "_datasense_date_group"
+
+        # Keep missing dates as missing groups.
+        aggregation_df[grouping_column] = (
+            period_values.astype("string")
+        )
+
     # Aggregation
     if aggregation == "count":
 
@@ -846,10 +912,18 @@ def group_and_aggregate(
 
         else:
             grouped = (
-                filtered_df.groupby(group_by, dropna=False)
+                aggregation_df.groupby(
+                    grouping_column,
+                    dropna=False,
+                )
                 .size()
                 .reset_index(name="result")
             )
+
+            if date_granularity is not None:
+                grouped = grouped.rename(
+                    columns={grouping_column: group_by}
+                )
 
             results = grouped.to_dict(orient="records")
 
@@ -871,10 +945,18 @@ def group_and_aggregate(
         else:
 
             grouped = (
-                filtered_df.groupby(group_by, dropna=False)[metric]
+                aggregation_df.groupby(
+                    grouping_column,
+                    dropna=False,
+                )[metric]
                 .agg(aggregation)
                 .reset_index(name="result")
             )
+
+            if date_granularity is not None:
+                grouped = grouped.rename(
+                    columns={grouping_column: group_by}
+                )
 
             results = grouped.to_dict(orient="records")
 
@@ -910,6 +992,7 @@ def group_and_aggregate(
 
     return {
         "group_by": group_by,
+        "date_granularity": date_granularity,
         "metric": metric,
         "aggregation": aggregation,
         "filters": applied_filters,

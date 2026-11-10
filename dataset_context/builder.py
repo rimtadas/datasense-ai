@@ -211,15 +211,18 @@ def _build_column_context(
         "unique_percentage": unique_percentage,
     }
 
-    if (
-        semantic_type == "datetime"
-        and not pd.api.types.is_datetime64_any_dtype(series)
-    ):
-        raise ValueError(
-            f"Column '{column}' is configured as datetime, "
-            "but its Pandas dtype is not datetime. "
-            "Parse the column with pd.to_datetime() first."
-        )
+    if semantic_type == "datetime":
+        datetime_ready = pd.api.types.is_datetime64_any_dtype(series)
+
+        column_context["datetime_ready"] = datetime_ready
+
+        if not datetime_ready:
+            column_context["datetime_note"] = (
+                "This column is configured as datetime, but its values "
+                "have not been converted to a Pandas datetime dtype. "
+                "Check datetime_parsing metadata before performing "
+                "date-based analysis."
+            )
 
     if (
         semantic_type == "monetary"
