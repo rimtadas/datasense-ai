@@ -21,6 +21,10 @@ from analytics.tools import (
     compare_groups,
 )
 
+from dataset_context.dataset_configs import (
+    ECOMMERCE_CONFIG,
+    ECOMMERCE_DATETIME_COLUMNS,
+)
 
 # --------------------------------------------------
 # 1. INITIALIZATION
@@ -37,8 +41,15 @@ client = InferenceClient(token=HF_TOKEN)
 
 MODEL = "openai/gpt-oss-120b:fastest"
 
-REPO_ID = "davidev07/synthetic-ecommerce-dataset"
-DATASET_FILE = "transactions.csv"
+REPO_ID = os.getenv(
+    "DATASENSE_DATASET_REPO_ID",
+    "davidev07/synthetic-ecommerce-dataset",
+)
+
+DATASET_FILE = os.getenv(
+    "DATASENSE_DATASET_FILE",
+    "transactions.csv",
+)
 
 
 # --------------------------------------------------
@@ -52,40 +63,23 @@ df = load_huggingface_dataset(
     filename=DATASET_FILE,
 )
 
-# Parse date column for this dataset.
-df["purchase_date"] = pd.to_datetime(
-    df["purchase_date"],
-    errors="coerce",
-)
+# Parse configured datetime columns.
+DATETIME_COLUMNS = ECOMMERCE_DATETIME_COLUMNS
 
-# Dataset-specific metadata.
-# The analytics tools remain dataset-agnostic.
-dataset_config = {
-    "dataset_description": (
-        "Synthetic e-commerce transaction dataset."
-    ),
-    "semantic_types": {
-        "transaction_id": "identifier",
-        "user_id": "identifier",
-        "product_id": "identifier",
-        "purchase_date": "datetime",
-        "unit_price": "monetary",
-        "subtotal": "monetary",
-        "discount_amount": "monetary",
-        "total_amount": "monetary",
-    },
-    "currency_column": "currency",
-    "column_descriptions": {
-        "total_amount": "Final transaction amount.",
-        "quantity": "Number of product units purchased.",
-        "payment_status": "Status of the transaction payment.",
-        "country": "Country associated with the transaction.",
-        "purchase_date": "Date and time of the purchase.",
-    },
-    "exclude_from_context": [
-        "shipping_address"
-    ],
-}
+for column in DATETIME_COLUMNS:
+    if column not in df.columns:
+        raise ValueError(
+            f"Configured datetime column '{column}' "
+            "does not exist in the dataset."
+        )
+
+    df[column] = pd.to_datetime(
+        df[column],
+        errors="coerce",
+    )
+
+# Dataset-specific metadata is maintained separately.
+dataset_config = ECOMMERCE_CONFIG
 
 print("Dataset loaded:", len(df), "rows")
 
@@ -210,19 +204,9 @@ tools = [
         "function": {
             "name": "get_value_distribution",
             "description": (
-                "Calculate a complete frequency distribution for a "
-                "categorical or Boolean column. Returns each category's "
-                "count and percentage, total rows after filtering, "
-                "missing-value count and percentage, unique category "
-                "count and truncation status. Supports filters on other "
-                "columns, such as filtering order_status to Cancelled "
-                "before calculating payment_method distribution. "
-                "Percentages are calculated in Python using all filtered "
-                "rows as the denominator, including rows with missing "
-                "values. Use this tool whenever the user asks for category "
-                "counts and percentages, proportions, distributions, "
-                "or most common values. Do not calculate these percentages "
-                "yourself."
+                "Optional filters applied before calculating "
+                "the distribution. Provide column names and values "
+                "that define the subset of records to analyse."
             ),
             "parameters": {
                 "type": "object",
@@ -238,8 +222,8 @@ tools = [
                         "type": ["object", "null"],
                         "description": (
                             "Optional filters applied before calculating "
-                            "the distribution. Example: "
-                            "{'order_status': 'Cancelled'}."
+                            "the distribution. Provide column names and values "
+                            "that define the subset of records to analyse."
                         ),
                         "additionalProperties": True,
                     },
@@ -329,13 +313,13 @@ tools = [
             "name": "compare_groups",
             "description": (
                 "Compare the same aggregation for two values in a column. "
-                "Use this for questions comparing groups, such as Delivered "
-                "versus Cancelled. It calculates both group values, the "
+                "Use this for questions comparing any two groups, categories, "
+                "or conditions. It calculates both group values, the "
                 "absolute difference (group_b minus group_a), and percentage "
                 "difference in Python. Use group_by to compare separately "
-                "across another dimension such as currency. Monetary metrics "
-                "must be grouped by currency or filtered to one currency."
-            ),
+                "across another dimension. Monetary metrics must be grouped "
+                "by the configured currency column or filtered to one currency."
+        ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -405,18 +389,24 @@ tools = [
 # 5. VALIDATE COLUMN ACCESS
 # --------------------------------------------------
 
-def validate_allowed_column(column):
+def validate_allowed_column(column, active_excluded_columns=None):
+
+    if active_excluded_columns is None:
+        active_excluded_columns = excluded_columns
 
     if column is None:
         return
 
-    if column in excluded_columns:
+    if column in active_excluded_columns:
         raise ValueError(
             f"Column '{column}' is excluded from agent access."
         )
 
 
-def validate_filter_columns(filters):
+def validate_filter_columns(
+    filters,
+    active_excluded_columns=None,
+):
 
     if not filters:
         return
@@ -425,42 +415,72 @@ def validate_filter_columns(filters):
         raise ValueError("Filters must be a dictionary.")
 
     for column in filters:
-        validate_allowed_column(column)
+        validate_allowed_column(
+            column,
+            active_excluded_columns,
+        )
 
 
 # --------------------------------------------------
 # 6. MAP TOOL NAMES TO PYTHON FUNCTIONS
 # --------------------------------------------------
 
-def execute_tool(function_name, arguments):
+def execute_tool(
+    function_name,
+    arguments,
+    active_df=None,
+    active_dataset_config=None,
+    active_excluded_columns=None,
+):
+    """
+    Execute an analytical tool against the supplied dataset.
+
+    If no dataset is supplied, retain the existing
+    module-level defaults for backward compatibility.
+    """
+
+    if active_df is None:
+        active_df = df
+
+    if active_dataset_config is None:
+        active_dataset_config = dataset_config
+
+    if active_excluded_columns is None:
+        active_excluded_columns = excluded_columns
 
     if function_name == "get_dataset_overview":
 
         return get_dataset_overview(
-            df,
-            dataset_config=dataset_config,
+            active_df,
+            dataset_config=active_dataset_config,
         )
 
     elif function_name == "get_column_summary":
 
         column = arguments["column"]
 
-        validate_allowed_column(column)
+        validate_allowed_column(
+            column,
+            active_excluded_columns,
+        )
 
         return get_column_summary(
-            df,
+            active_df,
             column=column,
-            dataset_config=dataset_config,
+            dataset_config=active_dataset_config,
         )
 
     elif function_name == "get_categorical_values":
 
         column = arguments["column"]
 
-        validate_allowed_column(column)
+        validate_allowed_column(
+            column,
+            active_excluded_columns,
+        )
 
         return get_categorical_values(
-            df,
+            active_df,
             column=column,
             limit=arguments.get("limit", 30),
         )
@@ -470,15 +490,22 @@ def execute_tool(function_name, arguments):
         column = arguments["column"]
         filters = arguments.get("filters")
 
-        validate_allowed_column(column)
-        validate_filter_columns(filters)
+        validate_allowed_column(
+            column,
+            active_excluded_columns,
+        )
+
+        validate_filter_columns(
+            filters,
+            active_excluded_columns,
+        )
 
         return get_value_distribution(
-            df=df,
+            df=active_df,
             column=column,
             filters=filters,
             limit=arguments.get("limit"),
-            dataset_config=dataset_config,
+            dataset_config=active_dataset_config,
         )
 
     elif function_name == "group_and_aggregate":
@@ -487,12 +514,23 @@ def execute_tool(function_name, arguments):
         metric = arguments.get("metric")
         filters = arguments.get("filters")
 
-        validate_allowed_column(group_by)
-        validate_allowed_column(metric)
-        validate_filter_columns(filters)
+        validate_allowed_column(
+            group_by,
+            active_excluded_columns,
+        )
+
+        validate_allowed_column(
+            metric,
+            active_excluded_columns,
+        )
+
+        validate_filter_columns(
+            filters,
+            active_excluded_columns,
+        )
 
         return group_and_aggregate(
-            df,
+            active_df,
             group_by=group_by,
             metric=metric,
             aggregation=arguments["aggregation"],
@@ -500,7 +538,7 @@ def execute_tool(function_name, arguments):
             sort_by=arguments.get("sort_by", "result"),
             ascending=arguments.get("ascending", False),
             limit=arguments.get("limit"),
-            dataset_config=dataset_config,
+            dataset_config=active_dataset_config,
         )
 
     elif function_name == "compare_groups":
@@ -510,13 +548,28 @@ def execute_tool(function_name, arguments):
         metric = arguments.get("metric")
         filters = arguments.get("filters")
 
-        validate_allowed_column(comparison_column)
-        validate_allowed_column(group_by)
-        validate_allowed_column(metric)
-        validate_filter_columns(filters)
+        validate_allowed_column(
+            comparison_column,
+            active_excluded_columns,
+        )
+
+        validate_allowed_column(
+            group_by,
+            active_excluded_columns,
+        )
+
+        validate_allowed_column(
+            metric,
+            active_excluded_columns,
+        )
+
+        validate_filter_columns(
+            filters,
+            active_excluded_columns,
+        )
 
         return compare_groups(
-            df=df,
+            df=active_df,
             comparison_column=comparison_column,
             group_a=arguments["group_a"],
             group_b=arguments["group_b"],
@@ -524,7 +577,7 @@ def execute_tool(function_name, arguments):
             aggregation=arguments["aggregation"],
             group_by=group_by,
             filters=filters,
-            dataset_config=dataset_config,
+            dataset_config=active_dataset_config,
         )
 
     else:
@@ -537,7 +590,10 @@ def execute_tool(function_name, arguments):
 # 7. DEFINE SYSTEM PROMPT
 # --------------------------------------------------
 
-system_prompt = f"""
+
+def build_system_prompt(active_context_json):
+
+    return f"""
 You are DataSense AI, an autonomous analytical assistant.
 
 Your job is to answer questions about the currently loaded dataset.
@@ -610,20 +666,15 @@ IMPORTANT RULES:
 
 18. Explain findings clearly and use actual tool results as evidence.
 
-19. Do not confuse average transaction value with the likelihood
-    of an event occurring. A higher average transaction amount among
-    cancelled orders does not establish that expensive orders
-    are more likely to be cancelled.
-
-20. Clearly distinguish observed patterns from possible explanations.
+19. Clearly distinguish observed patterns from possible explanations.
     Do not present hypotheses as established causes.
 
-21. Do not claim causation based only on correlation or descriptive
+20. Do not claim causation based only on correlation or descriptive
     statistics.
 
 DATASET CONTEXT:
 
-{context_json}
+{active_context_json}
 """
 
 
@@ -647,6 +698,9 @@ def run_agent(
     question,
     max_tool_rounds=5,
     verbose=True,
+    df=None,
+    dataset_config=None,
+    dataset_name=None,
 ):
     """
     Run DataSense AI for one natural-language question.
@@ -695,13 +749,104 @@ def run_agent(
         )
 
     # --------------------------------------------------
+    # 1A. INITIALIZE ACTIVE DATASET
+    # --------------------------------------------------
+
+    using_default_dataset = df is None
+
+    if using_default_dataset:
+        active_df = globals()["df"]
+    else:
+        if not isinstance(df, pd.DataFrame):
+            raise TypeError(
+                "df must be a Pandas DataFrame."
+            )
+
+        active_df = df
+
+    if active_df.empty:
+        raise ValueError("The dataset is empty.")
+
+    if dataset_config is None:
+        if using_default_dataset:
+            active_dataset_config = globals()["dataset_config"]
+        else:
+            active_dataset_config = {}
+    else:
+        if not isinstance(dataset_config, dict):
+            raise TypeError(
+                "dataset_config must be a dictionary."
+            )
+
+        active_dataset_config = dataset_config
+
+    active_dataset_name = (
+        dataset_name
+        or (
+            DATASET_FILE
+            if using_default_dataset
+            else "custom dataset"
+        )
+    )
+
+    # Work on a copy so the caller's DataFrame is not modified.
+    active_df = active_df.copy()
+
+    # Parse datetime columns configured through semantic metadata.
+    semantic_types = active_dataset_config.get(
+        "semantic_types", {}
+    )
+
+    datetime_columns = [
+        column
+        for column, semantic_type in semantic_types.items()
+        if semantic_type == "datetime"
+    ]
+
+    for column in datetime_columns:
+
+        if column not in active_df.columns:
+            raise ValueError(
+                f"Configured datetime column '{column}' "
+                "does not exist in the dataset."
+            )
+
+        active_df[column] = pd.to_datetime(
+            active_df[column],
+            errors="coerce",
+        )
+
+    # Build context specifically for this dataset.
+    active_dataset_context = build_dataset_context(
+        df=active_df,
+        dataset_name=active_dataset_name,
+        dataset_config=active_dataset_config,
+    )
+
+    active_context_json = json.dumps(
+        active_dataset_context,
+        indent=2,
+        default=str,
+    )
+
+    active_system_prompt = build_system_prompt(
+        active_context_json
+    )
+
+    active_excluded_columns = set(
+        active_dataset_config.get(
+            "exclude_from_context", []
+        )
+    )
+
+    # --------------------------------------------------
     # 2. INITIALIZE CONVERSATION
     # --------------------------------------------------
 
     messages = [
         {
             "role": "system",
-            "content": system_prompt,
+            "content": active_system_prompt,
         },
         {
             "role": "user",
@@ -812,6 +957,9 @@ def run_agent(
                 result = execute_tool(
                     function_name,
                     arguments,
+                    active_df=active_df,
+                    active_dataset_config=active_dataset_config,
+                    active_excluded_columns=active_excluded_columns,
                 )
 
                 # Convert the result into JSON-safe data.
