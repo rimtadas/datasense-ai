@@ -1,4 +1,3 @@
-@'
 ---
 title: DataSense AI
 emoji: 📚
