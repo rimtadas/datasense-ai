@@ -593,6 +593,7 @@ def group_and_aggregate(
     dataset_config: dict = None,
     validate_filter_values: bool = True,
     date_granularity: str = None,
+    include_empty_periods: bool = False,
 ) -> dict:
     """
     Filter, group and aggregate dataset records.
@@ -602,6 +603,10 @@ def group_and_aggregate(
 
     Optional date_granularity groups a parsed datetime column by:
     day, week, month, quarter or year.
+
+    When include_empty_periods is True, missing periods between the
+    first and last valid dates are included with a count of zero.
+    This option is supported only for date-based count aggregation.
     """
 
     if not isinstance(df, pd.DataFrame):
@@ -645,6 +650,19 @@ def group_and_aggregate(
                 f"Column '{group_by}' must be a parsed datetime "
                 "column to use date_granularity."
             )
+    if not isinstance(include_empty_periods, bool):
+        raise TypeError("include_empty_periods must be Boolean.")
+
+    if include_empty_periods and date_granularity is None:
+        raise ValueError(
+            "include_empty_periods requires date_granularity."
+        )
+
+    if include_empty_periods and aggregation != "count":
+        raise ValueError(
+            "include_empty_periods is supported only "
+            "with count aggregation."
+        )
 
     if aggregation != "count" and metric is None:
         raise ValueError(
@@ -684,6 +702,7 @@ def group_and_aggregate(
     if not isinstance(applied_filters, dict):
         raise TypeError("Filters must be supplied as a dictionary.")
 
+
     for column, condition in applied_filters.items():
 
         if column not in filtered_df.columns:
@@ -695,27 +714,21 @@ def group_and_aggregate(
 
         if isinstance(condition, dict):
 
-            if len(condition) != 1:
+            if not condition:
                 raise ValueError(
-                    f"Filter for '{column}' must contain exactly one operator."
+                    f"Filter for '{column}' cannot be empty."
                 )
 
-            operator, value = next(iter(condition.items()))
+            combined_mask = None
 
-            if operator not in SUPPORTED_FILTER_OPERATORS:
-                raise ValueError(
-                    f"Unsupported filter operator '{operator}'."
-                )
+            for operator, value in condition.items():
 
-            if validate_filter_values:
+                if operator not in SUPPORTED_FILTER_OPERATORS:
+                    raise ValueError(
+                        f"Unsupported filter operator '{operator}'."
+                    )
 
-                validation_values = []
-
-                if operator in {"eq", "ne"}:
-                    validation_values = [value]
-
-                elif operator in {"in", "not_in"}:
-
+                if operator in {"in", "not_in"}:
                     if (
                         isinstance(value, (str, bytes))
                         or not isinstance(value, (list, tuple, set))
@@ -724,82 +737,84 @@ def group_and_aggregate(
                             f"'{operator}' requires a list of values."
                         )
 
-                    validation_values = list(value)
-
-                for requested_value in validation_values:
-                    _validate_categorical_filter_value(
-                        original_series=df[column],
-                        value=requested_value,
-                        column=column,
+                if operator == "contains" and not isinstance(value, str):
+                    raise ValueError(
+                        "'contains' requires a string value."
                     )
 
-            if operator == "eq":
-                mask = _case_insensitive_equality(series, value)
+                if operator in {"is_null", "not_null"} and value is not True:
+                    raise ValueError(
+                        f"'{operator}' must be set to True."
+                    )
 
-            elif operator == "ne":
-                mask = _case_insensitive_equality(
-                    series, value, negate=True
+                if validate_filter_values:
+
+                    validation_values = []
+
+                    if operator in {"eq", "ne"}:
+                        validation_values = [value]
+
+                    elif operator in {"in", "not_in"}:
+                        validation_values = list(value)
+
+                    for requested_value in validation_values:
+                        _validate_categorical_filter_value(
+                            original_series=df[column],
+                            value=requested_value,
+                            column=column,
+                        )
+
+                if operator == "eq":
+                    mask = _case_insensitive_equality(series, value)
+
+                elif operator == "ne":
+                    mask = _case_insensitive_equality(
+                        series, value, negate=True
+                    )
+
+                elif operator == "gt":
+                    mask = series > value
+
+                elif operator == "gte":
+                    mask = series >= value
+
+                elif operator == "lt":
+                    mask = series < value
+
+                elif operator == "lte":
+                    mask = series <= value
+
+                elif operator == "in":
+                    mask = _case_insensitive_membership(series, value)
+
+                elif operator == "not_in":
+                    mask = _case_insensitive_membership(
+                        series, value, negate=True
+                    )
+
+                elif operator == "contains":
+                    mask = series.astype("string").str.contains(
+                        value,
+                        case=False,
+                        na=False,
+                        regex=False,
+                    )
+
+                elif operator == "is_null":
+                    mask = series.isna()
+
+                else:
+                    mask = series.notna()
+
+                combined_mask = (
+                    mask
+                    if combined_mask is None
+                    else combined_mask & mask
                 )
 
-            elif operator == "gt":
-                mask = series > value
-
-            elif operator == "gte":
-                mask = series >= value
-
-            elif operator == "lt":
-                mask = series < value
-
-            elif operator == "lte":
-                mask = series <= value
-
-            elif operator == "in":
-
-                if (
-                    isinstance(value, (str, bytes))
-                    or not isinstance(value, (list, tuple, set))
-                ):
-                    raise ValueError("'in' requires a list of values.")
-
-                mask = _case_insensitive_membership(series, value)
-
-            elif operator == "not_in":
-
-                if (
-                    isinstance(value, (str, bytes))
-                    or not isinstance(value, (list, tuple, set))
-                ):
-                    raise ValueError("'not_in' requires a list of values.")
-
-                mask = _case_insensitive_membership(
-                    series, value, negate=True
-                )
-
-            elif operator == "contains":
-
-                if not isinstance(value, str):
-                    raise ValueError("'contains' requires a string value.")
-
-                mask = series.astype("string").str.contains(
-                    value,
-                    case=False,
-                    na=False,
-                    regex=False
-                )
-
-            elif operator == "is_null":
-
-                if value is not True:
-                    raise ValueError("'is_null' must be set to True.")
-
-                mask = series.isna()
-
-            else:  # not_null
-
-                if value is not True:
-                    raise ValueError("'not_null' must be set to True.")
-
-                mask = series.notna()
+            filtered_df = filtered_df.loc[
+                combined_mask.fillna(False)
+            ].copy()
 
         elif isinstance(condition, (list, tuple, set)):
 
@@ -813,6 +828,10 @@ def group_and_aggregate(
 
             mask = _case_insensitive_membership(series, condition)
 
+            filtered_df = filtered_df.loc[
+                mask.fillna(False)
+            ].copy()
+
         else:
 
             if validate_filter_values:
@@ -824,7 +843,9 @@ def group_and_aggregate(
 
             mask = _case_insensitive_equality(series, condition)
 
-        filtered_df = filtered_df.loc[mask.fillna(False)].copy()
+            filtered_df = filtered_df.loc[
+                mask.fillna(False)
+            ].copy()
 
     # Validate metric
     if metric is not None and aggregation != "count":
@@ -960,6 +981,45 @@ def group_and_aggregate(
 
             results = grouped.to_dict(orient="records")
 
+    # Include missing calendar periods when explicitly requested.
+    if include_empty_periods:
+
+        valid_periods = period_values.dropna()
+
+        if not valid_periods.empty:
+
+            period_counts = (
+                aggregation_df.loc[filtered_df[group_by].notna()]
+                .groupby(grouping_column)
+                .size()
+            )
+
+            complete_periods = pd.period_range(
+                start=valid_periods.min(),
+                end=valid_periods.max(),
+                freq=frequency,
+            )
+
+            results = [
+                {
+                    group_by: str(period),
+                    "result": int(period_counts.get(str(period), 0)),
+                }
+                for period in complete_periods
+            ]
+
+        else:
+            results = []
+
+        # Keep records with missing dates separate from calendar periods.
+        missing_date_count = int(filtered_df[group_by].isna().sum())
+
+        if missing_date_count:
+            results.append({
+                group_by: None,
+                "result": missing_date_count,
+            })
+
     # Sorting
     if sort_by is not None and results:
 
@@ -993,6 +1053,7 @@ def group_and_aggregate(
     return {
         "group_by": group_by,
         "date_granularity": date_granularity,
+        "include_empty_periods": include_empty_periods,
         "metric": metric,
         "aggregation": aggregation,
         "filters": applied_filters,

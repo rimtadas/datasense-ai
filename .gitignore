@@ -33,3 +33,6 @@ htmlcov/
 # Temporary files
 *.log
 *.tmp
+
+# Local runtime data
+/data/

@@ -3,7 +3,7 @@ import os
 import json
 import logging
 import time
-
+from exceptions import UserFacingError
 import pandas as pd
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
@@ -55,7 +55,7 @@ MODEL = "openai/gpt-oss-120b:fastest"
 
 MAX_API_RETRIES = 2
 API_RETRY_DELAY_SECONDS = 1
-_api_metrics = None
+
 
 REPO_ID = os.getenv(
     "DATASENSE_DATASET_REPO_ID",
@@ -80,7 +80,7 @@ def get_client():
         hf_token = os.getenv("HF_TOKEN")
 
         if not hf_token:
-            raise ValueError(
+            raise UserFacingError(
                 "HF_TOKEN is missing. Add it to your .env file "
                 "or configure it as a Hugging Face Space secret."
             )
@@ -136,17 +136,15 @@ def is_retryable_api_error(error):
     return type(error).__name__ in retryable_exception_names
 
 
-def create_chat_completion_with_retries(**kwargs):
+def create_chat_completion_with_retries(api_metrics=None, **kwargs):
     """
     Retry temporary model API failures and collect usage metrics.
     """
 
-    global _api_metrics
-
     for attempt in range(MAX_API_RETRIES + 1):
 
-        if _api_metrics is not None:
-            _api_metrics["api_attempts"] += 1
+        if api_metrics is not None:
+            api_metrics["api_attempts"] += 1
 
         try:
             response = get_client().chat.completions.create(
@@ -156,7 +154,7 @@ def create_chat_completion_with_retries(**kwargs):
             # Collect token usage exactly once per API response.
             usage = getattr(response, "usage", None)
 
-            if usage is not None and _api_metrics is not None:
+            if usage is not None and api_metrics is not None:
 
                 prompt_tokens = getattr(
                     usage,
@@ -171,16 +169,16 @@ def create_chat_completion_with_retries(**kwargs):
                 )
 
                 if prompt_tokens is not None:
-                    _api_metrics["prompt_tokens"] += prompt_tokens
+                    api_metrics["prompt_tokens"] += prompt_tokens
 
                 if completion_tokens is not None:
-                    _api_metrics["completion_tokens"] += completion_tokens
+                    api_metrics["completion_tokens"] += completion_tokens
 
                 if (
                     prompt_tokens is not None
                     and completion_tokens is not None
                 ):
-                    _api_metrics["usage_available"] = True
+                    api_metrics["usage_available"] = True
 
             return response
 
@@ -386,6 +384,9 @@ tools = [
                 "when group_by is a confidently parsed datetime column. "
                 "Use date_granularity when the user requests a specific "
                 "time period, such as monthly or yearly results. "
+                "When the user asks for missing or zero-count calendar "
+                "periods, set include_empty_periods=true with "
+                "aggregation='count' and a date_granularity. "
                 "Can also filter, sort and limit the results. "
                 "For monetary metrics, respect the dataset currency "
                 "configuration: group by currency or filter to one currency."
@@ -420,7 +421,13 @@ tools = [
                     "filters": {
                         "type": "object",
                         "description": (
-                            "Optional filters expressed as column-value pairs."
+                            "Optional filters keyed by column name. A filter value can be "
+                            "a single value, a list of values, or an object containing one "
+                            "or more supported operators: eq, ne, gt, gte, lt, lte, in, "
+                            "not_in, contains, is_null, not_null. When multiple operators "
+                            "are supplied for the same column, they are combined using AND. "
+                            "For datetime columns, use ISO date strings for comparison "
+                            "operators."
                         ),
                         "additionalProperties": True,
                     },
@@ -454,6 +461,15 @@ tools = [
                             "column. Use day, week, month, quarter or year "
                             "when the question requests that time period. "
                             "Omit or use null for ordinary grouping."
+                        ),
+                    },
+                    "include_empty_periods": {
+                        "type": "boolean",
+                        "description": (
+                            "Set to true when the user asks for missing "
+                            "or zero-count calendar periods. Requires "
+                            "date_granularity and aggregation='count'. "
+                            "Defaults to false."
                         ),
                     },
                 },
@@ -723,6 +739,10 @@ def execute_tool(
         metric = arguments.get("metric")
         filters = arguments.get("filters")
         date_granularity = arguments.get("date_granularity")
+        include_empty_periods = arguments.get(
+            "include_empty_periods",
+            False,
+        )
 
         validate_allowed_column(
             group_by,
@@ -761,6 +781,7 @@ def execute_tool(
             limit=arguments.get("limit"),
             dataset_config=active_dataset_config,
             date_granularity=date_granularity,
+            include_empty_periods=include_empty_periods,
         )
 
     elif function_name == "compare_groups":
@@ -895,6 +916,36 @@ IMPORTANT RULES:
     - Do not group by individual dates and then manually combine
       the results into months, quarters or years.
     - Leave date_granularity null or omit it for ordinary grouping.
+    For date-based filtering:
+    - When the user specifies a calendar year, such as "in 2025",
+      "during 2025" or "for 2025", filter the relevant confidently
+      parsed datetime column using two operators:
+        - gte: YYYY-01-01
+        - lt: (YYYY + 1)-01-01
+      For example, "in 2025" means gte="2025-01-01"
+      and lt="2026-01-01".
+    - Combine both operators in one filter condition. They are
+      applied using AND.
+    - Use ISO date strings for date comparisons.
+    - Apply the date filter before calculating the requested
+      aggregation or ranking.
+    - Do not ask the user to provide date boundaries when the
+      requested calendar year is explicit.
+    - For an explicitly stated inclusive date range, use gte
+      for the start date and lt for the day after the end date.
+    - Do not set date_granularity unless the user also requests
+      grouping by a time period.
+    For questions about missing or zero-count periods:
+    - When the user asks whether any months, weeks, days, quarters
+      or years had no records, use group_and_aggregate.
+    - Set group_by to the relevant confidently parsed datetime column.
+    - Set aggregation="count" and metric=null.
+    - Set date_granularity to the requested period.
+    - Set include_empty_periods=true.
+    - Do not infer zero-count periods from an ordinary date grouping.
+    - Report only zero-count periods explicitly returned by the tool.
+    - If the user asks for a particular calendar year, also apply
+      the appropriate calendar-year date filter.
 
 11. Use compare_groups when the user asks to compare two groups.
     Do not calculate group differences or percentage differences yourself.
@@ -1040,11 +1091,9 @@ def run_agent(
     Returns structured execution results and updated conversation history.
     """
 
-    global _api_metrics
-
     execution_start = time.perf_counter()
 
-    _api_metrics = {
+    api_metrics = {
         "api_attempts": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -1265,6 +1314,7 @@ def run_agent(
                 )
 
             response = create_chat_completion_with_retries(
+                api_metrics=api_metrics,
                 model=MODEL,
                 messages=messages,
                 tools=tools,
@@ -1466,7 +1516,6 @@ def run_agent(
         time.perf_counter() - execution_start
     )
 
-    api_metrics = _api_metrics.copy()
 
     return {
         "question": question,
