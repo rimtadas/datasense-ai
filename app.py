@@ -804,6 +804,17 @@ def chat_with_dataset(
             verbose=False,
         )
 
+        logger.info(
+            "Agent performance | Duration: %.3fs | "
+            "API attempts: %d | Prompt tokens: %s | "
+            "Completion tokens: %s | Tool calls: %d",
+            result["execution_time_seconds"],
+            result["api_attempts"],
+            result["prompt_tokens"],
+            result["completion_tokens"],
+            result["tool_call_count"],
+        )
+
         if not result["completed"] or not result["final_answer"]:
             raise gr.Error(
                 "The agent could not complete the analysis. "
