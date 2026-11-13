@@ -57,7 +57,7 @@ It combines deterministic Python-based analytics with LLM-powered agent orchestr
 - Delete individual sessions.
 - Persist uploaded datasets and Hugging Face dataset references locally.
 
-Session persistence depends on the configured storage location. The default local storage directory is `./data`. Persistent storage must be configured separately when deploying to an environment with ephemeral filesystem storage.
+Session persistence depends on the configured storage location. The default local storage directory is `./data`. The current Hugging Face Spaces deployment uses local filesystem storage without an attached persistent storage volume. Consequently, saved sessions and uploaded datasets may not survive Space restarts or rebuilds. Persistent storage must be configured separately for deployments requiring durable session data.
 
 ### 4. Analytics engine
 
@@ -174,6 +174,22 @@ The MVP has been evaluated using an independent analytical benchmark, a second d
 | Prompt-injection tests | 6/6 passed |
 
 These results reflect the tested datasets and scenarios. They are not a guarantee of correctness for every possible dataset or analytical question.
+
+## Performance observations
+
+Initial manual testing produced the following observations:
+
+| Measurement | Observed result |
+|---|---:|
+| Browser response time — dataset overview | 0.7 seconds |
+| Browser response time — city-level sales query | 1.6 seconds |
+| Browser response time — city-level revenue query | 0.8 seconds |
+| Average observed browser response time | ~1.03 seconds |
+| Server-side agent execution — three earlier samples | 0.48–0.91 seconds |
+| Average server-side agent execution — three samples | ~0.64 seconds |
+| Additional live server-side execution sample | 0.72 seconds |
+
+These are indicative observations from a small number of manual queries, not controlled performance benchmarks. Actual response times depend on dataset size, model response time, network conditions and query complexity. Formal load testing and API cost benchmarking have not yet been performed.
 
 ## Security and privacy considerations
 
