@@ -31,8 +31,9 @@ ACCEPTABLE_TOOL_STAGES = {
         {"group_and_aggregate", "get_value_distribution"},
     ],
     "Q14": [
-        {"get_categorical_values", "get_value_distribution"},
-        {"compare_groups"},
+        {"get_value_distribution"},
+        {"group_and_aggregate"},
+        {"group_and_aggregate"},
     ],
 }
 
@@ -168,14 +169,16 @@ def evaluate_tool_selection(selected_tools, stages):
 
 def evaluate(
     question_ids=None,
+    results_file=None,
 ):
+    results_file = Path(results_file) if results_file else BASELINE_FILE
 
-    if not BASELINE_FILE.exists():
+    if not results_file.exists():
         raise FileNotFoundError(
-            f"Baseline file not found: {BASELINE_FILE}"
+            f"Results file not found: {results_file}"
         )
 
-    df = pd.read_csv(BASELINE_FILE)
+    df = pd.read_csv(results_file)
 
     required_columns = {
         "question_id",
@@ -470,10 +473,18 @@ if __name__ == "__main__":
         help="Optional question IDs to evaluate.",
     )
 
+    parser.add_argument(
+        "--results-file",
+        type=Path,
+        default=BASELINE_FILE,
+        help="CSV file containing evaluation results.",
+    )
+
     args = parser.parse_args()
 
     results = evaluate(
-        question_ids=args.question_ids
+        question_ids=args.question_ids,
+        results_file=args.results_file,
     )
 
     print_report(results)

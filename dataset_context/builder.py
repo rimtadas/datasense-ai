@@ -235,16 +235,7 @@ def _build_column_context(
             f"Monetary column '{column}' must have a numeric dtype."
         )
 
-    if (
-        data_type in {"Integer", "Float", "Numeric"}
-        and semantic_type not in {"identifier", "monetary"}
-    ):
-        column_context["numeric_summary"] = {
-            "min": _safe_value(series.min()),
-            "max": _safe_value(series.max()),
-            "mean": _safe_value(series.mean()),
-            "median": _safe_value(series.median()),
-        }
+
 
     if data_type == "Date/Time":
         column_context["date_range"] = {

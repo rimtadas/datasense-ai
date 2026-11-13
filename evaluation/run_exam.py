@@ -30,7 +30,7 @@ from evaluation.exam_questions import (
 # --------------------------------------------------
 
 OUTPUT_FILE = (
-    Path(__file__).parent / "baseline_results.csv"
+    Path(__file__).parent / "evaluation_results.csv"
 )
 
 MAX_TOOL_ROUNDS = 5
@@ -112,6 +112,33 @@ def build_result_record(question_data, agent_result):
 
         "rounds_used": agent_result["rounds_used"],
 
+        # Agent performance metrics
+        "execution_time_seconds": agent_result.get(
+            "execution_time_seconds"
+        ),
+
+        "api_attempts": agent_result.get(
+            "api_attempts"
+        ),
+
+        "prompt_tokens": agent_result.get(
+            "prompt_tokens"
+        ),
+
+        "completion_tokens": agent_result.get(
+            "completion_tokens"
+        ),
+
+        "total_tokens": (
+            agent_result["prompt_tokens"]
+            + agent_result["completion_tokens"]
+            if (
+                agent_result.get("prompt_tokens") is not None
+                and agent_result.get("completion_tokens") is not None
+            )
+            else None
+        ),
+
         "final_answer": agent_result["final_answer"],
 
         "execution_errors": json_string(
@@ -148,6 +175,12 @@ def build_failed_result(question_data, error):
         "failed_tool_calls": 0,
 
         "rounds_used": 0,
+
+        "execution_time_seconds": None,
+        "api_attempts": None,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
         "final_answer": "",
 
         "execution_errors": json_string([

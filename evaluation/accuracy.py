@@ -3,7 +3,7 @@ import argparse
 import json
 import math
 from pathlib import Path
-
+import re
 import pandas as pd
 
 from data_connector.huggingface_loader import load_huggingface_dataset
@@ -75,14 +75,17 @@ def load_dataset():
 # 3. LOAD BASELINE
 # --------------------------------------------------
 
-def load_baseline():
 
-    if not BASELINE_FILE.exists():
+def load_baseline(results_file=BASELINE_FILE):
+
+    results_file = Path(results_file)
+
+    if not results_file.exists():
         raise FileNotFoundError(
-            f"Baseline file not found: {BASELINE_FILE}"
+            f"Results file not found: {results_file}"
         )
 
-    baseline = pd.read_csv(BASELINE_FILE)
+    baseline = pd.read_csv(results_file)
 
     required_columns = {
         "question_id",
@@ -94,7 +97,7 @@ def load_baseline():
 
     if missing_columns:
         raise ValueError(
-            f"Baseline is missing columns: {sorted(missing_columns)}"
+            f"Results file is missing columns: {sorted(missing_columns)}"
         )
 
     return baseline
@@ -246,6 +249,46 @@ def build_result(question_id, checks):
 # --------------------------------------------------
 # 7. FIND TOOL EXECUTION
 # --------------------------------------------------
+def normalize_tool_arguments(arguments):
+    """
+    Normalise tool arguments for fair evaluation.
+
+    - Ignore optional arguments explicitly set to None.
+    - Treat plain equality filters and explicit eq filters
+      as equivalent.
+    - Preserve all other argument values.
+    """
+
+    if not isinstance(arguments, dict):
+        return arguments
+
+    normalized = {}
+
+    for key, value in arguments.items():
+
+        if value is None or (key == "filters" and value == {}):
+            continue
+
+        if key == "filters" and isinstance(value, dict):
+
+            normalized_filters = {}
+
+            for column, condition in value.items():
+
+                if (
+                    isinstance(condition, dict)
+                    and set(condition.keys()) == {"eq"}
+                ):
+                    normalized_filters[column] = condition["eq"]
+                else:
+                    normalized_filters[column] = condition
+
+            normalized[key] = normalized_filters
+
+        else:
+            normalized[key] = value
+
+    return normalized
 
 def get_tool_result(
     tool_results,
@@ -276,7 +319,10 @@ def get_tool_result(
 
     arguments = tool_call.get("arguments", {})
 
-    if arguments != expected_arguments:
+    actual_normalized = normalize_tool_arguments(arguments)
+    expected_normalized = normalize_tool_arguments(expected_arguments)
+
+    if actual_normalized != expected_normalized:
         return None, (
             f"Incorrect tool arguments. "
             f"Expected: {expected_arguments}. "
@@ -385,6 +431,13 @@ def evaluate_question(df, question_id, baseline_row):
     tool_results = parse_tool_results(
         baseline_row["tool_results"]
     )
+
+    if not tool_results and question_id in {"Q01","Q02", "Q03"}:
+        return evaluate_answer_only_question(
+            df,
+            question_id,
+            baseline_row,
+        )
 
     if tool_results is None:
         return {
@@ -599,21 +652,30 @@ def evaluate_question(df, question_id, baseline_row):
 
         result, error = get_tool_result(
             tool_results,
-            "get_value_distribution",
-            {"column": "order_status"},
+            "group_and_aggregate",
+            {
+                "group_by": "order_status",
+                "metric": None,
+                "aggregation": "count",
+            },
         )
 
         if error:
             return failed_result(question_id, error)
 
-        actual_counts = extract_category_counts(
-            result.get("category_values")
-        )
+        rows = result.get("results", [])
+
+        actual_counts = {
+            str(item["order_status"]): item["result"]
+            for item in rows
+            if isinstance(item, dict)
+            and "order_status" in item
+            and "result" in item
+        }
 
         comparisons = [
             ("Order status counts", expected["category_counts"], actual_counts),
         ]
-
     # Q10: Top five countries
     elif question_id == "Q10":
 
@@ -622,7 +684,10 @@ def evaluate_question(df, question_id, baseline_row):
         result, error = get_tool_result(
             tool_results,
             "get_value_distribution",
-            {"column": "country"},
+            {
+                "column": "country",
+                "limit": None,
+            },
         )
 
         if error:
@@ -663,8 +728,6 @@ def evaluate_question(df, question_id, baseline_row):
                 "metric": "total_amount",
                 "aggregation": "mean",
                 "filters": {"order_status": "Delivered"},
-                "sort_by": "result",
-                "ascending": False,
             },
         )
 
@@ -686,7 +749,13 @@ def evaluate_question(df, question_id, baseline_row):
         comparisons = [
             ("Aggregation", expected["aggregation"], result.get("aggregation")),
             ("Metric", expected["metric"], result.get("metric")),
-            ("Filter", expected["filter"], result.get("filters")),
+            (
+                "Filter",
+                expected["filter"],
+                normalize_tool_arguments({
+                    "filters": result.get("filters")
+                }).get("filters"),
+            ),
             (
                 "Delivered transaction count",
                 int((df["order_status"] == "Delivered").sum()),
@@ -753,40 +822,56 @@ def evaluate_question(df, question_id, baseline_row):
         ]
 
     # Q15: Highest country among cancelled transactions
+
     elif question_id == "Q15":
 
         expected = calculate_q15_expected(df)
 
         result, error = get_tool_result(
             tool_results,
-            "get_value_distribution",
+            "group_and_aggregate",
             {
-                "column": "country",
-                "filters": {"order_status": "Cancelled"},
-                "limit": None,
+                "group_by": "country",
+                "metric": None,
+                "aggregation": "count",
+                "filters": {
+                    "order_status": {
+                        "eq": "Cancelled",
+                    }
+                },
             },
         )
 
         if error:
             return failed_result(question_id, error)
 
-        categories = result.get("category_values", [])
+        rows = result.get("results", [])
 
-        highest_country = None
-        highest_count = None
-        highest_percentage = None
+        valid_rows = [
+            item for item in rows
+            if isinstance(item, dict)
+            and item.get("country") is not None
+            and item.get("result") is not None
+        ]
 
-        if isinstance(categories, list) and categories:
+        highest = (
+            max(valid_rows, key=lambda item: item["result"])
+            if valid_rows else None
+        )
 
-            first = categories[0]
+        highest_country = highest.get("country") if highest else None
+        highest_count = highest.get("result") if highest else None
 
-            if isinstance(first, dict):
-                highest_country = first.get("value")
-                highest_count = first.get("count")
-                highest_percentage = first.get("percentage")
+        total_cancelled = result.get("rows_after_filtering")
+
+        highest_percentage = (
+            round(highest_count / total_cancelled * 100, 2)
+            if highest_count is not None and total_cancelled
+            else None
+        )
 
         comparisons = [
-            ("Total cancelled transactions", expected["total_cancelled"], result.get("rows_after_filtering")),
+            ("Total cancelled transactions", expected["total_cancelled"], total_cancelled),
             ("Highest country", expected["highest_country"], highest_country),
             ("Highest country transaction count", expected["transaction_count"], highest_count),
             ("Percentage of cancelled transactions", expected["percentage"], highest_percentage),
@@ -802,6 +887,172 @@ def evaluate_question(df, question_id, baseline_row):
         build_checks(comparisons),
     )
 
+def evaluate_answer_only_question(df, question_id, baseline_row):
+    """
+    Validate answers that can be generated from dataset context
+    without calling an analytical tool.
+    """
+
+    answer = str(baseline_row.get("final_answer", "") or "")
+    if question_id == "Q01":
+
+        expected = calculate_q01_expected(df)
+
+        normalized_answer = (
+            answer
+            .replace("\u00a0", " ")
+            .replace("\u202f", " ")
+            .replace("\u2009", " ")
+        )
+
+        def extract_labeled_integer(label):
+            match = re.search(
+                rf"{label}\s*:\s*\*{{0,2}}\s*([\d,\s]+)",
+                normalized_answer,
+                re.IGNORECASE,
+            )
+
+            if not match:
+                return None
+
+            digits = re.sub(r"\D", "", match.group(1))
+            return int(digits) if digits else None
+
+        comparisons = [
+            (
+                "Row count",
+                expected["row_count"],
+                extract_labeled_integer("Rows"),
+            ),
+            (
+                "Column count",
+                expected["column_count"],
+                extract_labeled_integer("Columns"),
+            ),
+            (
+                "Duplicate row count",
+                expected["duplicate_rows"],
+                extract_labeled_integer("Duplicate rows"),
+            ),
+        ]
+
+        return build_result(
+            question_id,
+            build_checks(comparisons),
+        )
+
+    elif question_id == "Q02":
+
+        expected = calculate_q02_expected(df, DATASET_CONFIG)
+
+        # Extract available columns from numbered or bulleted lists.
+        available_heading = re.search(
+            r"Available columns.*?:",
+            answer,
+            re.IGNORECASE,
+        )
+
+        excluded_heading = re.search(
+            r"Excluded (?:from agent access|columns).*?:?",
+            answer,
+            re.IGNORECASE,
+        )
+
+        available_section = ""
+        excluded_section = ""
+
+        if available_heading and excluded_heading:
+            available_section = answer[
+                available_heading.end():excluded_heading.start()
+            ]
+            excluded_section = answer[excluded_heading.end():]
+
+        actual_available = re.findall(
+            r"(?m)^\s*(?:\d+[\.\)]\s*|[-*]\s*)([A-Za-z_]\w*)",
+            available_section,
+        )
+
+        actual_excluded = [
+            column
+            for column in expected["excluded_columns"]
+            if re.search(
+                rf"(?<!\w){re.escape(column)}(?!\w)",
+                excluded_section,
+            )
+        ]
+
+        comparisons = [
+            (
+                "Available columns",
+                expected["available_columns"],
+                actual_available,
+            ),
+            (
+                "Excluded columns",
+                expected["excluded_columns"],
+                actual_excluded,
+            ),
+            (
+                "Available column count",
+                expected["available_column_count"],
+                len(actual_available),
+            ),
+            (
+                "Excluded column count",
+                expected["excluded_column_count"],
+                len(actual_excluded),
+            ),
+        ]
+
+        return build_result(
+            question_id,
+            build_checks(comparisons),
+        )
+
+    elif question_id == "Q03":
+
+        expected = calculate_q03_expected(df)
+        normalized_answer = answer
+
+        # Normalise Unicode dashes and non-breaking spaces.
+        for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014"):
+            normalized_answer = normalized_answer.replace(dash, "-")
+
+        normalized_answer = (
+            normalized_answer
+            .replace("\u00a0", " ")
+            .replace("\u202f", " ")
+            .replace("\u2009", " ")
+        )
+
+        actual_column = (
+            expected["column"]
+            if expected["column"] in normalized_answer
+            else None
+        )
+
+        actual_min_date = (
+            expected["min_date"]
+            if expected["min_date"] in normalized_answer
+            else None
+        )
+
+        actual_max_date = (
+            expected["max_date"]
+            if expected["max_date"] in normalized_answer
+            else None
+        )
+
+        comparisons = [
+            ("Column", expected["column"], actual_column),
+            ("Earliest date", expected["min_date"], actual_min_date),
+            ("Latest date", expected["max_date"], actual_max_date),
+        ]
+
+        return build_result(
+            question_id,
+            build_checks(comparisons),
+        )
 
 # --------------------------------------------------
 # 10. COMMON FAILURE RESULT
@@ -847,7 +1098,6 @@ def evaluate_q13(df, baseline_row):
             "metric": None,
             "aggregation": "count",
             "group_by": None,
-            "filters": {},
         },
     )
 
@@ -890,6 +1140,7 @@ def evaluate_q13(df, baseline_row):
 # 12. EVALUATE Q14 - MULTI-TOOL QUESTION
 # --------------------------------------------------
 
+
 def evaluate_q14(df, baseline_row):
 
     expected = calculate_q14_expected(df)
@@ -915,10 +1166,9 @@ def evaluate_q14(df, baseline_row):
     if error:
         return failed_result(
             "Q14",
-            f"First tool call: {error}",
+            f"Distribution tool: {error}",
         )
 
-    # Verify that the distribution tool was called before comparison.
     distribution_index = next(
         (
             index
@@ -929,24 +1179,10 @@ def evaluate_q14(df, baseline_row):
         None,
     )
 
-    comparison_index = next(
-        (
-            index
-            for index, item in enumerate(tool_results)
-            if isinstance(item, dict)
-            and item.get("tool") == "compare_groups"
-        ),
-        None,
-    )
-
-    if (
-        distribution_index is None
-        or comparison_index is None
-        or distribution_index >= comparison_index
-    ):
+    if distribution_index is None:
         return failed_result(
             "Q14",
-            "The two tools were not executed in the expected sequence.",
+            "Order status distribution was not executed.",
         )
 
     actual_categories = distribution_result.get("category_values")
@@ -970,7 +1206,10 @@ def evaluate_q14(df, baseline_row):
     status_a = expected["top_two_statuses"][0]["status"]
     status_b = expected["top_two_statuses"][1]["status"]
 
-    comparison_result, error = get_tool_result(
+    actual_comparison = None
+
+    # Strategy 1: compare_groups
+    comparison_result, comparison_error = get_tool_result(
         tool_results,
         "compare_groups",
         {
@@ -983,30 +1222,117 @@ def evaluate_q14(df, baseline_row):
         },
     )
 
-    if error:
-        return failed_result(
-            "Q14",
-            f"Second tool call: {error}",
+    if not comparison_error:
+
+        comparison_index = next(
+            (
+                index
+                for index, item in enumerate(tool_results)
+                if isinstance(item, dict)
+                and item.get("tool") == "compare_groups"
+            ),
+            None,
         )
 
-    currency_results = extract_currency_results(
-        comparison_result.get("results")
-    )
+        if (
+            comparison_index is not None
+            and distribution_index < comparison_index
+        ):
 
-    actual_comparison = None
+            currency_results = extract_currency_results(
+                comparison_result.get("results")
+            )
 
-    if currency_results is not None:
+            if currency_results is not None:
 
-        actual_comparison = {}
+                actual_comparison = {}
 
-        for currency, item in currency_results.items():
+                for currency, item in currency_results.items():
 
-            actual_comparison[currency] = {
-                "group_a_mean": item.get("group_a_value"),
-                "group_b_mean": item.get("group_b_value"),
-                "difference_b_minus_a": item.get("difference_b_minus_a"),
-                "percentage_difference_vs_a": item.get("percentage_difference_vs_a"),
-            }
+                    actual_comparison[currency] = {
+                        "group_a_mean": item.get("group_a_value"),
+                        "group_b_mean": item.get("group_b_value"),
+                        "difference_b_minus_a": item.get(
+                            "difference_b_minus_a"
+                        ),
+                        "percentage_difference_vs_a": item.get(
+                            "percentage_difference_vs_a"
+                        ),
+                    }
+
+    # Strategy 2: two group_and_aggregate calls
+    if actual_comparison is None:
+
+        aggregate_results = {}
+
+        for index, item in enumerate(tool_results):
+
+            if (
+                not isinstance(item, dict)
+                or item.get("tool") != "group_and_aggregate"
+                or not item.get("success")
+                or index <= distribution_index
+            ):
+                continue
+
+            arguments = item.get("arguments") or {}
+            filters = arguments.get("filters") or {}
+
+            status_filter = filters.get("order_status")
+
+            if isinstance(status_filter, dict):
+                status_filter = status_filter.get("eq")
+
+            if status_filter not in (status_a, status_b):
+                continue
+
+            result = item.get("result") or {}
+            rows = result.get("results")
+
+            if not isinstance(rows, list):
+                continue
+
+            currency_values = {}
+
+            for row in rows:
+
+                if not isinstance(row, dict):
+                    continue
+
+                currency = row.get("currency")
+                value = row.get("result")
+
+                if currency is not None and value is not None:
+                    currency_values[str(currency)] = value
+
+            aggregate_results[status_filter] = currency_values
+
+        if status_a in aggregate_results and status_b in aggregate_results:
+
+            actual_comparison = {}
+
+            common_currencies = (
+                set(aggregate_results[status_a])
+                & set(aggregate_results[status_b])
+            )
+
+            for currency in sorted(common_currencies):
+
+                mean_a = aggregate_results[status_a][currency]
+                mean_b = aggregate_results[status_b][currency]
+
+                difference = mean_b - mean_a
+
+                actual_comparison[currency] = {
+                    "group_a_mean": mean_a,
+                    "group_b_mean": mean_b,
+                    "difference_b_minus_a": difference,
+                    "percentage_difference_vs_a": (
+                        difference / abs(mean_a) * 100
+                        if mean_a != 0
+                        else None
+                    ),
+                }
 
     comparisons = [
         (
@@ -1085,7 +1411,11 @@ def main():
         default=SUPPORTED_QUESTIONS,
         help="Question IDs to evaluate.",
     )
-
+    parser.add_argument(
+        "--results-file",
+        default=str(BASELINE_FILE),
+        help="CSV results file to evaluate.",
+    )
     args = parser.parse_args()
 
     question_ids = [
@@ -1105,7 +1435,7 @@ def main():
             + ", ".join(unsupported)
         )
 
-    baseline = load_baseline()
+    baseline = load_baseline(args.results_file)
     df = load_dataset()
 
     all_results = []

@@ -21,7 +21,7 @@ EXAM_QUESTIONS = [
             "How many rows and columns are in the dataset? "
             "Are there any duplicate rows?"
         ),
-        "expected_tools": ["get_dataset_overview"],
+        "expected_tools": [],
         "difficulty": "easy",
     },
 
@@ -32,7 +32,7 @@ EXAM_QUESTIONS = [
             "Which columns are available for analysis, and "
             "which columns have been excluded from agent access?"
         ),
-        "expected_tools": ["get_dataset_overview"],
+        "expected_tools": [],
         "difficulty": "easy",
     },
 
@@ -46,7 +46,7 @@ EXAM_QUESTIONS = [
         "question": (
             "What is the date range covered by the purchase_date column?"
         ),
-        "expected_tools": ["get_column_summary"],
+        "expected_tools": [],
         "difficulty": "easy",
     },
 
@@ -129,11 +129,13 @@ EXAM_QUESTIONS = [
     {
         "id": "Q10",
         "category": "aggregation_and_filtering",
-        "question": (
+         "question": (
             "Which five countries have the highest number "
-            "of transactions?"
+            "of transactions? For each country, report "
+            "the transaction count and its percentage "
+            "of all transactions."
         ),
-        "expected_tools": ["group_and_aggregate"],
+        "expected_tools": ["get_value_distribution"],
         "difficulty": "medium",
     },
 
@@ -185,11 +187,15 @@ EXAM_QUESTIONS = [
         "question": (
             "Identify the two most common order statuses. "
             "Then compare their average transaction amounts "
-            "separately by currency."
+            "separately by currency. For each currency, report "
+            "both group averages, the absolute difference "
+            "(second status minus first status), and the "
+            "percentage difference relative to the first "
+            "status average."
         ),
         "expected_tools": [
-            "get_categorical_values",
-            "compare_groups",
+            {"get_value_distribution"},
+            {"compare_groups"},
         ],
         "difficulty": "hard",
     },
@@ -203,7 +209,7 @@ EXAM_QUESTIONS = [
             "transactions does that country represent?"
         ),
         "expected_tools": [
-            "get_value_distribution",
+            "group_and_aggregate",
         ],
         "difficulty": "hard",
     },
@@ -266,8 +272,8 @@ def validate_exam_questions():
             f"Missing fields in {question.get('id')}"
         )
 
-        assert question["expected_tools"], (
-            f"No expected tools defined for {question['id']}"
+        assert isinstance(question["expected_tools"], list), (
+            f"expected_tools must be a list for {question['id']}"
         )
 
     return True

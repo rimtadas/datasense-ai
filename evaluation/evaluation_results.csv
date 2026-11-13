@@ -1,0 +1,194 @@
+﻿question_id,category,difficulty,question,expected_tools,selected_tools,tool_details,tool_results,tool_call_count,successful_tool_calls,failed_tool_calls,rounds_used,execution_time_seconds,api_attempts,prompt_tokens,completion_tokens,total_tokens,final_answer,execution_errors,status
+Q01,dataset_understanding,easy,How many rows and columns are in the dataset? Are there any duplicate rows?,"[""get_dataset_overview""]",[],[],[],0,0,0,1,1.5,1,6344,192,6536,"**Dataset size**
+
+- **Rows:** 1 000  
+- **Columns:** 18 (the full dataset includes 18 columns; one column – `shipping_address` – is excluded from analysis)  
+- **Duplicate rows:** 0  
+
+These numbers come directly from the dataset overview metadata.",[],completed
+Q02,dataset_understanding,easy,"Which columns are available for analysis, and which columns have been excluded from agent access?",[],[],[],[],0,0,0,1,0.771,1,6345,211,6556,"**Available columns (you can analyze these):**  
+1. transaction_id  
+2. user_id  
+3. product_id  
+4. purchase_date  
+5. quantity  
+6. unit_price  
+7. subtotal  
+8. discount_percentage  
+9. discount_amount  
+10. total_amount  
+11. currency  
+12. country  
+13. payment_method  
+14. payment_status  
+15. order_status  
+16. device_type  
+17. discount_code  
+
+**Excluded from agent access:**  
+- shipping_address  
+
+These are the only columns the agent can work with; all others are available for analysis.",[],completed
+Q03,column_profiling,easy,What is the date range covered by the purchase_date column?,[],[],[],[],0,0,0,1,0.759,1,6340,142,6482,The **purchase_date** column spans from **2025‑09‑23 01:26:03** (earliest record) to **2026‑09‑22 07:56:26** (latest record).,[],completed
+Q04,column_profiling,easy,"What are the minimum, maximum, mean and median values of quantity?","[""get_column_summary""]","[""get_column_summary""]","[{""tool"": ""get_column_summary"", ""arguments"": {""column"": ""quantity""}, ""round"": 1}]","[{""tool"": ""get_column_summary"", ""arguments"": {""column"": ""quantity""}, ""round"": 1, ""success"": true, ""result"": {""column"": ""quantity"", ""data_type"": ""int64"", ""semantic_type"": null, ""row_count"": 1000, ""missing_count"": 0, ""unique_count"": 5, ""min"": 1.0, ""max"": 5.0, ""mean"": 1.659, ""median"": 1.0}, ""error"": null}]",1,1,0,2,1.307,2,12800,126,12926,"**Quantity column summary**
+
+| Statistic | Value |
+|-----------|-------|
+| Minimum   | 1.0 |
+| Maximum   | 5.0 |
+| Mean      | 1.659 |
+| Median    | 1.0 |
+
+These values come directly from the dataset’s column summary.",[],completed
+Q05,category_discovery,easy,"What unique values exist in the order_status column, and how many transactions belong to each status?","[""get_categorical_values""]","[""get_value_distribution""]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""order_status"", ""limit"": null}, ""round"": 1}]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""order_status"", ""limit"": null}, ""round"": 1, ""success"": true, ""result"": {""column"": ""order_status"", ""filters"": {}, ""rows_after_filtering"": 1000, ""unique_count"": 5, ""missing_count"": 0, ""missing_percentage"": 0.0, ""category_values"": [{""value"": ""Delivered"", ""count"": 330, ""percentage"": 33.0}, {""value"": ""Cancelled"", ""count"": 283, ""percentage"": 28.3}, {""value"": ""Processing"", ""count"": 181, ""percentage"": 18.1}, {""value"": ""Returned"", ""count"": 114, ""percentage"": 11.4}, {""value"": ""Shipped"", ""count"": 92, ""percentage"": 9.2}], ""category_values_truncated"": false}, ""error"": null}]",1,1,0,2,1.45,2,12898,223,13121,"Here are the distinct values that appear in **order_status** and the number of transactions for each:
+
+| order_status | transaction count |
+|--------------|-------------------|
+| Delivered    | 330 |
+| Cancelled    | 283 |
+| Processing   | 181 |
+| Returned     | 114 |
+| Shipped      | 92 |
+
+These counts come directly from the dataset’s value‑distribution analysis.",[],completed
+Q06,category_discovery,easy,What payment methods are available in the dataset?,"[""get_categorical_values""]","[""get_categorical_values""]","[{""tool"": ""get_categorical_values"", ""arguments"": {""column"": ""payment_method""}, ""round"": 1}]","[{""tool"": ""get_categorical_values"", ""arguments"": {""column"": ""payment_method""}, ""round"": 1, ""success"": true, ""result"": {""column"": ""payment_method"", ""unique_count"": 6, ""category_values"": [{""value"": ""Credit Card"", ""count"": 175}, {""value"": ""Debit Card"", ""count"": 173}, {""value"": ""Bank Transfer"", ""count"": 173}, {""value"": ""PayPal"", ""count"": 170}, {""value"": ""Google Pay"", ""count"": 167}, {""value"": ""Apple Pay"", ""count"": 142}], ""category_values_truncated"": false}, ""error"": null}]",1,1,0,2,1.412,2,12823,179,13002,"The dataset contains six distinct payment methods:
+
+| Payment Method | Count |
+|----------------|-------|
+| Credit Card    | 175 |
+| Debit Card     | 173 |
+| Bank Transfer  | 173 |
+| PayPal         | 170 |
+| Google Pay     | 167 |
+| Apple Pay      | 142 |
+
+These are the only payment‑method categories present in the data.",[],completed
+Q07,distribution_analysis,medium,What is the distribution of payment methods across all transactions? Show counts and percentages.,"[""get_value_distribution""]","[""get_value_distribution""]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""payment_method""}, ""round"": 1}]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""payment_method""}, ""round"": 1, ""success"": true, ""result"": {""column"": ""payment_method"", ""filters"": {}, ""rows_after_filtering"": 1000, ""unique_count"": 6, ""missing_count"": 0, ""missing_percentage"": 0.0, ""category_values"": [{""value"": ""Credit Card"", ""count"": 175, ""percentage"": 17.5}, {""value"": ""Bank Transfer"", ""count"": 173, ""percentage"": 17.3}, {""value"": ""Debit Card"", ""count"": 173, ""percentage"": 17.3}, {""value"": ""PayPal"", ""count"": 170, ""percentage"": 17.0}, {""value"": ""Google Pay"", ""count"": 167, ""percentage"": 16.7}, {""value"": ""Apple Pay"", ""count"": 142, ""percentage"": 14.2}], ""category_values_truncated"": false}, ""error"": null}]",1,1,0,2,1.57,2,12913,197,13110,"**Payment Method Distribution (All Transactions)**  
+
+| Payment Method | Count | Percentage |
+|----------------|-------|------------|
+| Credit Card    | 175   | 17.5 % |
+| Bank Transfer  | 173   | 17.3 % |
+| Debit Card     | 173   | 17.3 % |
+| PayPal         | 170   | 17.0 % |
+| Google Pay     | 167   | 16.7 % |
+| Apple Pay      | 142   | 14.2 % |
+
+Total records examined: **1,000** (no missing values).",[],completed
+Q08,distribution_analysis,medium,"Among cancelled transactions, which payment methods are most common? Show counts and percentages.","[""get_value_distribution""]","[""get_value_distribution""]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""payment_method"", ""filters"": {""order_status"": ""Cancelled""}, ""limit"": null}, ""round"": 1}]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""payment_method"", ""filters"": {""order_status"": ""Cancelled""}, ""limit"": null}, ""round"": 1, ""success"": true, ""result"": {""column"": ""payment_method"", ""filters"": {""order_status"": ""Cancelled""}, ""rows_after_filtering"": 283, ""unique_count"": 6, ""missing_count"": 0, ""missing_percentage"": 0.0, ""category_values"": [{""value"": ""Debit Card"", ""count"": 56, ""percentage"": 19.79}, {""value"": ""Credit Card"", ""count"": 53, ""percentage"": 18.73}, {""value"": ""Bank Transfer"", ""count"": 52, ""percentage"": 18.37}, {""value"": ""PayPal"", ""count"": 44, ""percentage"": 15.55}, {""value"": ""Google Pay"", ""count"": 43, ""percentage"": 15.19}, {""value"": ""Apple Pay"", ""count"": 35, ""percentage"": 12.37}], ""category_values_truncated"": false}, ""error"": null}]",1,1,0,2,1.493,2,12930,287,13217,"**Payment‑method distribution for cancelled transactions**
+
+| Payment method | Count | Percentage |
+|----------------|-------|------------|
+| Debit Card     | 56    | 19.79 % |
+| Credit Card    | 53    | 18.73 % |
+| Bank Transfer  | 52    | 18.37 % |
+| PayPal         | 44    | 15.55 % |
+| Google Pay     | 43    | 15.19 % |
+| Apple Pay      | 35    | 12.37 % |
+
+**Total cancelled transactions:** 283  
+
+The table lists each payment method used among the cancelled orders, ordered by count (most common first). Percentages are calculated relative to the 283 cancelled transactions.",[],completed
+Q09,aggregation_and_filtering,medium,How many transactions are there for each order status?,"[""group_and_aggregate""]","[""group_and_aggregate""]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""order_status"", ""metric"": null, ""aggregation"": ""count""}, ""round"": 1}]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""order_status"", ""metric"": null, ""aggregation"": ""count""}, ""round"": 1, ""success"": true, ""result"": {""group_by"": ""order_status"", ""date_granularity"": null, ""include_empty_periods"": false, ""metric"": null, ""aggregation"": ""count"", ""filters"": {}, ""rows_after_filtering"": 1000, ""result_count"": 5, ""currency"": null, ""results"": [{""order_status"": ""Delivered"", ""result"": 330}, {""order_status"": ""Cancelled"", ""result"": 283}, {""order_status"": ""Processing"", ""result"": 181}, {""order_status"": ""Returned"", ""result"": 114}, {""order_status"": ""Shipped"", ""result"": 92}]}, ""error"": null}]",1,1,0,2,1.528,2,12861,176,13037,"**Transactions by order status**
+
+| Order Status | Transaction Count |
+|--------------|-------------------|
+| Delivered    | 330 |
+| Cancelled    | 283 |
+| Processing   | 181 |
+| Returned     | 114 |
+| Shipped      | 92 |
+
+These counts come directly from the dataset aggregation of the **order_status** column.",[],completed
+Q10,aggregation_and_filtering,medium,"Which five countries have the highest number of transactions? For each country, report the transaction count and its percentage of all transactions.","[""get_value_distribution""]","[""get_value_distribution""]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""country"", ""limit"": null}, ""round"": 1}]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""country"", ""limit"": null}, ""round"": 1, ""success"": true, ""result"": {""column"": ""country"", ""filters"": {}, ""rows_after_filtering"": 1000, ""unique_count"": 10, ""missing_count"": 0, ""missing_percentage"": 0.0, ""category_values"": [{""value"": ""Italy"", ""count"": 146, ""percentage"": 14.6}, {""value"": ""United States"", ""count"": 145, ""percentage"": 14.5}, {""value"": ""Canada"", ""count"": 137, ""percentage"": 13.7}, {""value"": ""Portugal"", ""count"": 117, ""percentage"": 11.7}, {""value"": ""United Kingdom"", ""count"": 112, ""percentage"": 11.2}, {""value"": ""Australia"", ""count"": 85, ""percentage"": 8.5}, {""value"": ""Spain"", ""count"": 82, ""percentage"": 8.2}, {""value"": ""France"", ""count"": 78, ""percentage"": 7.8}, {""value"": ""Germany"", ""count"": 57, ""percentage"": 5.7}, {""value"": ""Japan"", ""count"": 41, ""percentage"": 4.1}], ""category_values_truncated"": false}, ""error"": null}]",1,1,0,2,1.641,2,13009,219,13228,"**Top 5 countries by transaction count**
+
+| Rank | Country        | Transaction count | % of all transactions |
+|------|----------------|------------------|-----------------------|
+| 1    | Italy          | 146 | 14.6 % |
+| 2    | United States  | 145 | 14.5 % |
+| 3    | Canada         | 137 | 13.7 % |
+| 4    | Portugal       | 117 | 11.7 % |
+| 5    | United Kingdom | 112 | 11.2 % |
+
+These figures come directly from the dataset’s value‑distribution for the **country** column (1000 total transactions).",[],completed
+Q11,aggregation_and_filtering,medium,"What is the average total_amount for delivered transactions, broken down by currency?","[""group_and_aggregate""]","[""group_and_aggregate""]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}}, ""round"": 1}]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}}, ""round"": 1, ""success"": true, ""result"": {""group_by"": ""currency"", ""date_granularity"": null, ""include_empty_periods"": false, ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}, ""rows_after_filtering"": 330, ""result_count"": 6, ""currency"": [""EUR"", ""AUD"", ""GBP"", ""JPY"", ""USD"", ""CAD""], ""results"": [{""currency"": ""AUD"", ""result"": 954.3006896551725}, {""currency"": ""GBP"", ""result"": 761.315}, {""currency"": ""CAD"", ""result"": 737.1139534883721}, {""currency"": ""USD"", ""result"": 736.0971052631579}, {""currency"": ""EUR"", ""result"": 733.7028235294117}, {""currency"": ""JPY"", ""result"": 691.9492857142858}]}, ""error"": null}]",1,1,0,2,1.479,2,12945,257,13202,"**Average `total_amount` for Delivered transactions, broken down by currency**
+
+| Currency | Average `total_amount` |
+|----------|------------------------|
+| AUD | 954.3006896551725 |
+| GBP | 761.315 |
+| CAD | 737.1139534883721 |
+| USD | 736.0971052631579 |
+| EUR | 733.7028235294117 |
+| JPY | 691.9492857142858 |
+
+*The calculation used the 330 records whose `order_status` = “Delivered”.*",[],completed
+Q12,group_comparison,hard,"Compare the average total_amount of Delivered and Cancelled transactions, separately for each currency. Show the absolute and percentage differences.","[""compare_groups""]","[""compare_groups""]","[{""tool"": ""compare_groups"", ""arguments"": {""comparison_column"": ""order_status"", ""group_a"": ""Delivered"", ""group_b"": ""Cancelled"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""group_by"": ""currency"", ""filters"": {}}, ""round"": 1}]","[{""tool"": ""compare_groups"", ""arguments"": {""comparison_column"": ""order_status"", ""group_a"": ""Delivered"", ""group_b"": ""Cancelled"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""group_by"": ""currency"", ""filters"": {}}, ""round"": 1, ""success"": true, ""result"": {""comparison_column"": ""order_status"", ""group_a"": ""Delivered"", ""group_b"": ""Cancelled"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""group_by"": ""currency"", ""difference_definition"": ""group_b minus group_a"", ""percentage_definition"": ""difference divided by absolute group_a, multiplied by 100"", ""rows_after_filtering"": {""group_a"": 330, ""group_b"": 283}, ""result_count"": 6, ""results"": [{""group_a_value"": 954.3006896551725, ""group_b_value"": 996.9433333333333, ""difference_b_minus_a"": 42.642643678160766, ""percentage_difference_vs_a"": 4.468470382597049, ""currency"": ""AUD""}, {""group_a_value"": 737.1139534883721, ""group_b_value"": 601.427027027027, ""difference_b_minus_a"": -135.68692646134514, ""percentage_difference_vs_a"": -18.407862965991946, ""currency"": ""CAD""}, {""group_a_value"": 733.7028235294117, ""group_b_value"": 849.5847154471545, ""difference_b_minus_a"": 115.88189191774279, ""percentage_difference_vs_a"": 15.794118299872872, ""currency"": ""EUR""}, {""group_a_value"": 761.315, ""group_b_value"": 820.4110256410256, ""difference_b_minus_a"": 59.09602564102556, ""percentage_difference_vs_a"": 7.762361918657265, ""currency"": ""GBP""}, {""group_a_value"": 691.9492857142858, ""group_b_value"": 595.955625, ""difference_b_minus_a"": -95.99366071428574, ""percentage_difference_vs_a"": -13.872932987450568, ""currency"": ""JPY""}, {""group_a_value"": 736.0971052631579, ""group_b_value"": 804.3411363636365, ""difference_b_minus_a"": 68.24403110047854, ""percentage_difference_vs_a"": 9.271063642626471, ""currency"": ""USD""}]}, ""error"": null}]",1,1,0,2,1.647,2,13252,694,13946,"**Average `total_amount` for Delivered vs Cancelled transactions, broken down by currency**
+
+| Currency | Delivered (mean `total_amount`) | Cancelled (mean `total_amount`) | Difference (Cancelled − Delivered) | % Difference vs Delivered |
+|----------|-------------------------------|--------------------------------|------------------------------------|---------------------------|
+| AUD | 954.30 | 996.94 | **+42.64** | **+4.47 %** |
+| CAD | 737.11 | 601.43 | **‑135.69** | **‑18.41 %** |
+| EUR | 733.70 | 849.58 | **+115.88** | **+15.79 %** |
+| GBP | 761.32 | 820.41 | **+59.10** | **+7.76 %** |
+| JPY | 691.95 | 595.96 | **‑95.99** | **‑13.87 %** |
+| USD | 736.10 | 804.34 | **+68.24** | **+9.27 %** |
+
+**Key points**
+
+* The tool compared the two order‑status groups **Delivered** (group A) and **Cancelled** (group B) using the **mean** aggregation of the `total_amount` column, and then calculated the absolute and percentage differences for each currency.
+* Overall, the dataset contains **330** Delivered rows and **283** Cancelled rows (`rows_after_filtering`), which are the underlying sample sizes for these averages.
+* Positive differences indicate that Cancelled transactions have a higher average `total_amount` than Delivered ones for that currency; negative differences indicate the opposite.  
+  * For example, in **EUR** the average Cancelled amount (≈ 849.58) is about **15.8 %** higher than the Delivered average (≈ 733.70).  
+  * In **CAD** the Cancelled average is **≈ 18.4 %** lower than the Delivered average.
+* These results are computed directly from the data, respecting the configured currency column and without any manual adjustments.",[],completed
+Q13,group_comparison,medium,Compare the number of transactions with payment_status equal to Completed versus Failed.,"[""compare_groups""]","[""compare_groups""]","[{""tool"": ""compare_groups"", ""arguments"": {""comparison_column"": ""payment_status"", ""group_a"": ""Completed"", ""group_b"": ""Failed"", ""metric"": null, ""aggregation"": ""count"", ""group_by"": null, ""filters"": {}}, ""round"": 1}]","[{""tool"": ""compare_groups"", ""arguments"": {""comparison_column"": ""payment_status"", ""group_a"": ""Completed"", ""group_b"": ""Failed"", ""metric"": null, ""aggregation"": ""count"", ""group_by"": null, ""filters"": {}}, ""round"": 1, ""success"": true, ""result"": {""comparison_column"": ""payment_status"", ""group_a"": ""Completed"", ""group_b"": ""Failed"", ""metric"": null, ""aggregation"": ""count"", ""group_by"": null, ""difference_definition"": ""group_b minus group_a"", ""percentage_definition"": ""difference divided by absolute group_a, multiplied by 100"", ""rows_after_filtering"": {""group_a"": 750, ""group_b"": 103}, ""result_count"": 1, ""results"": [{""group_a_value"": 750, ""group_b_value"": 103, ""difference_b_minus_a"": -647.0, ""percentage_difference_vs_a"": -86.26666666666667}]}, ""error"": null}]",1,1,0,2,1.441,2,12893,209,13102,"**Comparison of transaction counts by payment status**
+
+| Payment status | Count |
+|----------------|-------|
+| Completed      | 750 |
+| Failed         | 103 |
+
+**Difference (Failed − Completed)**: ‑647  
+
+**Percentage difference vs. Completed**: ‑86.27 %  
+
+The “Failed” status accounts for far fewer transactions than “Completed”.",[],completed
+Q14,multi_step_reasoning,hard,"Identify the two most common order statuses. Then compare their average transaction amounts separately by currency. For each currency, report both group averages, the absolute difference (second status minus first status), and the percentage difference relative to the first status average.","[""{'get_value_distribution'}"", ""{'compare_groups'}""]","[""get_value_distribution"", ""group_and_aggregate"", ""group_and_aggregate""]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""order_status"", ""limit"": null}, ""round"": 1}, {""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}}, ""round"": 2}, {""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}}, ""round"": 3}]","[{""tool"": ""get_value_distribution"", ""arguments"": {""column"": ""order_status"", ""limit"": null}, ""round"": 1, ""success"": true, ""result"": {""column"": ""order_status"", ""filters"": {}, ""rows_after_filtering"": 1000, ""unique_count"": 5, ""missing_count"": 0, ""missing_percentage"": 0.0, ""category_values"": [{""value"": ""Delivered"", ""count"": 330, ""percentage"": 33.0}, {""value"": ""Cancelled"", ""count"": 283, ""percentage"": 28.3}, {""value"": ""Processing"", ""count"": 181, ""percentage"": 18.1}, {""value"": ""Returned"", ""count"": 114, ""percentage"": 11.4}, {""value"": ""Shipped"", ""count"": 92, ""percentage"": 9.2}], ""category_values_truncated"": false}, ""error"": null}, {""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}}, ""round"": 2, ""success"": true, ""result"": {""group_by"": ""currency"", ""date_granularity"": null, ""include_empty_periods"": false, ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Delivered""}}, ""rows_after_filtering"": 330, ""result_count"": 6, ""currency"": [""EUR"", ""AUD"", ""GBP"", ""JPY"", ""USD"", ""CAD""], ""results"": [{""currency"": ""AUD"", ""result"": 954.3006896551725}, {""currency"": ""GBP"", ""result"": 761.315}, {""currency"": ""CAD"", ""result"": 737.1139534883721}, {""currency"": ""USD"", ""result"": 736.0971052631579}, {""currency"": ""EUR"", ""result"": 733.7028235294117}, {""currency"": ""JPY"", ""result"": 691.9492857142858}]}, ""error"": null}, {""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""currency"", ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}}, ""round"": 3, ""success"": true, ""result"": {""group_by"": ""currency"", ""date_granularity"": null, ""include_empty_periods"": false, ""metric"": ""total_amount"", ""aggregation"": ""mean"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}, ""rows_after_filtering"": 283, ""result_count"": 6, ""currency"": [""EUR"", ""AUD"", ""CAD"", ""USD"", ""GBP"", ""JPY""], ""results"": [{""currency"": ""AUD"", ""result"": 996.9433333333333}, {""currency"": ""EUR"", ""result"": 849.5847154471545}, {""currency"": ""GBP"", ""result"": 820.4110256410256}, {""currency"": ""USD"", ""result"": 804.3411363636365}, {""currency"": ""CAD"", ""result"": 601.427027027027}, {""currency"": ""JPY"", ""result"": 595.955625}]}, ""error"": null}]",3,3,0,4,3.549,4,26893,1393,28286,"**Most common order statuses**
+
+| Rank | Order status | Count |
+|------|--------------|-------|
+| 1 | Delivered | 330 |
+| 2 | Cancelled | 283 |
+
+**Average `total_amount` by currency for each status**
+
+| Currency | Delivered avg | Cancelled avg | Δ (Cancelled – Delivered) | % Δ vs Delivered |
+|----------|--------------|---------------|---------------------------|-------------------|
+| AUD | 954.3006896551725 | 996.9433333333333 | **+42.6426436781608** | **+4.47 %** |
+| EUR | 733.7028235294117 | 849.5847154471545 | **+115.8818919177428** | **+15.80 %** |
+| GBP | 761.315 | 820.4110256410256 | **+59.0960256410256** | **+7.76 %** |
+| JPY | 691.9492857142858 | 595.955625 | **‑95.9936607142858** | **‑13.87 %** |
+| USD | 736.0971052631579 | 804.3411363636365 | **+68.2440311004786** | **+9.27 %** |
+| CAD | 737.1139534883721 | 601.427027027027 | **‑135.6869264613451** | **‑18.40 %** |
+
+*Δ = Cancelled average – Delivered average*  
+*% Δ = (Δ / Delivered average) × 100 %*",[],completed
+Q15,multi_step_reasoning,hard,Which country has the highest number of cancelled transactions? What percentage of all cancelled transactions does that country represent?,"[""get_value_distribution""]","[""group_and_aggregate""]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""country"", ""metric"": null, ""aggregation"": ""count"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}}, ""round"": 1}]","[{""tool"": ""group_and_aggregate"", ""arguments"": {""group_by"": ""country"", ""metric"": null, ""aggregation"": ""count"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}}, ""round"": 1, ""success"": true, ""result"": {""group_by"": ""country"", ""date_granularity"": null, ""include_empty_periods"": false, ""metric"": null, ""aggregation"": ""count"", ""filters"": {""order_status"": {""eq"": ""Cancelled""}}, ""rows_after_filtering"": 283, ""result_count"": 10, ""currency"": null, ""results"": [{""country"": ""United States"", ""result"": 44}, {""country"": ""United Kingdom"", ""result"": 39}, {""country"": ""Canada"", ""result"": 37}, {""country"": ""Portugal"", ""result"": 32}, {""country"": ""Italy"", ""result"": 30}, {""country"": ""Australia"", ""result"": 24}, {""country"": ""France"", ""result"": 24}, {""country"": ""Spain"", ""result"": 21}, {""country"": ""Germany"", ""result"": 16}, {""country"": ""Japan"", ""result"": 16}]}, ""error"": null}]",1,1,0,2,1.63,2,12956,396,13352,"**Country with the most cancelled transactions**
+
+| Country | Cancelled transactions |
+|---------|------------------------|
+| United States | 44 |
+
+**Share of all cancelled transactions**
+
+- Total cancelled transactions (all countries): **283**  
+- United States cancelled transactions: **44**  
+
+**Percentage**
+
+\[
+\frac{44}{283}\times 100 \approx 15.5\%
+\]
+
+**Answer:** The United States has the highest number of cancelled transactions, representing **about 15.5 %** of all cancelled transactions.",[],completed

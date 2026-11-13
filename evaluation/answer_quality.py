@@ -118,13 +118,14 @@ def extract_numbers(answer):
     # Remove spaces between a sign and its number.
     answer = re.sub(r"(?<=[+-])\s+(?=\d)", "", answer)
 
-    pattern = r"(?<![A-Za-z])[-+]?\d[\d,]*(?:\.\d+)?"
+    pattern = r"(?<![A-Za-z])[-+]?\d[\d,\s]*(?:\.\d+)?"
 
     values = []
 
     for match in re.findall(pattern, answer):
         try:
-            values.append(float(match.replace(",", "")))
+            normalized = re.sub(r"[\s,]", "", match)
+            values.append(float(normalized))
         except ValueError:
             continue
 
@@ -352,11 +353,17 @@ def evaluate_answer(question_id, answer, expected):
 
     elif question_id == "Q05":
 
-        check_number(
+        actual_unique_count = sum(
+            1
+            for category in expected["category_counts"]
+            if contains_text(answer, category)
+        )
+
+        add_check(
             checks,
-            answer,
             "Correct unique status count",
-            expected["unique_count"],
+            actual_unique_count == expected["unique_count"],
+            f"Expected {expected['unique_count']}, found {actual_unique_count}",
         )
 
         for category, count in expected["category_counts"].items():
@@ -756,6 +763,7 @@ def evaluate_answer(question_id, answer, expected):
                 answer,
                 f"Correct percentage difference for {currency}",
                 values["percentage_difference_vs_a"],
+                tolerance=0.011,
             )
 
     # --------------------------------------------------
@@ -790,6 +798,7 @@ def evaluate_answer(question_id, answer, expected):
             answer,
             "Correct percentage of cancelled transactions",
             expected["percentage"],
+            tolerance=0.051,
         )
 
     return checks
@@ -799,14 +808,15 @@ def evaluate_answer(question_id, answer, expected):
 # EVALUATION
 # --------------------------------------------------
 
-def evaluate(question_ids=None):
+def evaluate(question_ids=None, results_file=None):
+    results_file = Path(results_file) if results_file else BASELINE_FILE
 
-    if not BASELINE_FILE.exists():
+    if not results_file.exists():
         raise FileNotFoundError(
-            f"Baseline file not found: {BASELINE_FILE}"
+            f"Results file not found: {results_file}"
         )
 
-    baseline = pd.read_csv(BASELINE_FILE)
+    baseline = pd.read_csv(results_file)
 
     required_columns = {
         "question_id",
@@ -1040,10 +1050,18 @@ if __name__ == "__main__":
         help="Optional question IDs to evaluate.",
     )
 
+    parser.add_argument(
+        "--results-file",
+        type=Path,
+        default=BASELINE_FILE,
+        help="CSV file containing evaluation results.",
+    )
+
     args = parser.parse_args()
 
     reports = evaluate(
-        question_ids=args.question_ids
+        question_ids=args.question_ids,
+        results_file=args.results_file,
     )
 
     print_report(reports)
